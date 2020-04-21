@@ -4,10 +4,12 @@
 glider_dac/models/deployment.py
 Model definition for a Deployment
 '''
-from glider_dac import app, db, slugify
+from glider_dac import app, db, slugify, queue
+from glider_dac.glider_emails import glider_deployment_check
 from datetime import datetime
 from flask_mongokit import Document
 from bson.objectid import ObjectId
+from rq import Queue, Connection, Worker
 from shutil import rmtree
 import os
 import hashlib
@@ -166,6 +168,7 @@ class Deployment(Document):
         - write or remove complete.txt
         - generate/update md5 files (removed on not-complete)
         - link/unlink via bindfs to archive dir
+        - schedule checker report against ERDDAP endpoint
         """
         # Save a file called "completed.txt"
         completed_file = os.path.join(self.full_path, "completed.txt")
@@ -201,6 +204,13 @@ class Deployment(Document):
                 for f in filenames:
                     if f.endswith(".md5"):
                         os.unlink(os.path.join(dirpath, f))
+
+        # schedule the checker job to kick off the compliance checker email
+        # on the deployment
+        queue.enqueue(glider_deployment_check,
+                      kwargs={"deployment_dir": self.deployment_dir,
+                              "force": True}, job_timeout=800)
+
 
     def calculate_checksum(self):
         '''
