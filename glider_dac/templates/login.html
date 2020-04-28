@@ -5,9 +5,14 @@
 <h3>Login</h3>
 
 <form class="form-horizontal" method="POST" action="{{ url_for('login') }}">
-  {{ form.csrf_token }}
-  {% if form.csrf_token.errors %}
-      <div class="warning">You have submitted an invalid CSRF token</div>
+
+  {# this is mostly used for unit testing, when we want to temporarily
+     disable the CSRF protection so the tests will run #}
+  {% if "csrf_token" in form %}
+    {{ form.csrf_token }}
+    {% if form.csrf_token.errors %}
+        <div class="warning">You have submitted an invalid CSRF token</div>
+    {% endif %}
   {% endif %}
 
   {% for field in form %}
