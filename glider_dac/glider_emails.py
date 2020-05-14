@@ -5,6 +5,7 @@ from glider_dac import app, mail, db
 from datetime import datetime
 from compliance_checker.suite import CheckSuite
 from compliance_checker.runner import ComplianceChecker
+from urllib.parse import urljoin
 import tempfile
 import glob
 import sys
@@ -31,10 +32,11 @@ def send_registration_email(username, deployment):
     # sender comes from MAIL_DEFAULT_SENDER in env
     app.logger.info("Sending email about new deployment to %s", app.config.get('MAIL_DEFAULT_TO'))
     subject        = "New Glider Deployment - %s" % deployment.name
-    recipients     = [app.config.get('MAIL_DEFAULT_TO')]
+    #recipients     = [app.config.get('MAIL_DEFAULT_TO')]
+    recipients     = ["ben.adams@rpsgroup.com"]
     cc_recipients  = []
-    if app.config.get('MAIL_DEFAULT_LIST') is not None:
-        cc_recipients.append(app.config.get('MAIL_DEFAULT_LIST'))
+    #if app.config.get('MAIL_DEFAULT_LIST') is not None:
+    #    cc_recipients.append(app.config.get('MAIL_DEFAULT_LIST'))
 
     msg            = Message(subject, recipients=recipients, cc=cc_recipients)
     msg.body       = render_template(
@@ -149,118 +151,38 @@ def glider_deployment_check(data_type=None, completed=True, force=False,
                                            "\n".join(all_messages))
 
 def process_deployment(dep):
-    os.chdir(os.path.join("/data/data/priv_erddap",
-                          dep['deployment_dir']))
     deployment_issues = "Deployment {}".format(os.path.basename(dep['name']))
     groups = OrderedDict()
+    erddap_fmt_string = "erddap/tabledap/{}.nc?&time%3Emax(time)-1%20day"
+    base_url = app.config["PRIVATE_ERDDAP"]
+    # FIXME: determine a more robust way of getting scheme
+    if not base_url.startswith("http"):
+        base_url = "http://{}".format(base_url)
+    url_path = "/".join([base_url,
+                         erddap_fmt_string.format(dep["name"])])
+    # TODO: would be better if we didn't have to write to a temp file
+    outhandle, outfile = tempfile.mkstemp()
+    try:
+        failures, errors = ComplianceChecker.run_checker(ds_loc=url_path,
+                                      checker_names=['gliderdac'], verbose=True,
+                                      criteria='normal', output_format='text',
+                                      output_filename=outfile)
+    except:
+        pass
+    else:
+        with open(outfile, 'r') as f:
+            errs = f.read()
 
-    for file_number, (fname, res) in enumerate(file_loop()):
-        # TODO: memoize call?
-        if len(res) == 0:
-            continue
-        else:
-            if res not in groups:
-                groups[res] = []
-
-            groups[res].append((file_number, fname))
-
-    all_keys = set.union(*[set(kg) for kg in groups.keys()])
-    prev_keys = set()
-    messages = []
-    while prev_keys != all_keys:
-        prev_keys, error_text = parse_issues(groups, prev_keys)
-        messages.append(error_text)
-    # can we work with the raw object instead of finding via a dict
+    # janky way of testing if passing
     dep_obj = db.Deployment.find_one({'_id': dep['_id']})
-    compliance_passed = len(messages) == 0
+    compliance_passed = "All tests passed!" in ers
+    dep_obj["compliance_check_passed"] = compliance_passed
+
     if compliance_passed:
         final_message = "All files passed compliance check on glider deployment {}".format(dep['name'])
     else:
         final_message = ("Deployment {} has issues:\n".format(dep['name']) +
-                         "\n".join(messages))
-    dep_obj["compliance_check_passed"] = compliance_passed
+                         ers)
+        dep_obj["compliance_check_report"] = errs
     dep_obj.save()
     return compliance_passed, final_message
-
-# intersection of all issues
-def parse_issues(groups, prev_issues=None):
-    """
-    Parses the issues, exlcuding any that weren't previously present
-    """
-    if prev_issues is None:
-        prev_issues = set()
-    leftover_issues = [set(k) - prev_issues for k in groups.keys()
-                       if len(set(k) - prev_issues) > 0]
-    core_issues = [set.intersection(*[set(k) for k in leftover_issues])]
-    # if the intersection is zero length, we've hit the end of shared issues
-    if len(core_issues[0]) == 0:
-        if len(leftover_issues) > 2:
-            tiebreak_issues = [i for i in
-                               chain.from_iterable(pset_len(leftover_issues, r)
-                               for r in range(2, len(leftover_issues)))
-                               if len(i[1]) > 0]
-            if len(tiebreak_issues) == 0:
-               issues = leftover_issues
-            else:
-                issues = [max(tiebreak_issues,
-                        key=lambda tup: (tup[0], len(tup[1])))[1]]
-        else:
-            issues = leftover_issues
-    else:
-        issues = core_issues
-
-    for issue_set in issues:
-        affected_files = [(file_ct, name) for errors, file_info in
-                          groups.items() for file_ct, name in file_info if
-                          issue_set.issubset(errors)]
-    contiguous_files = [list(g) for g in consecutive_groups(affected_files,
-                                                            lambda x: x[0])]
-
-    fname_message = ', '.join("{} to {}".format(l[0][1], l[-1][1])
-                              if len(l) > 1 else l[0][1] for
-                              l in contiguous_files)
-
-    error_str = "\n".join([' * {}'.format(i) for i
-                          in sorted(issue_set)])
-    return (prev_issues | set.union(*issues),
-            "{}\n{}".format(fname_message, error_str))
-
-
-def file_loop(filepath=None):
-    """
-    Gets subset of error messages
-
-    """
-    # TODO: consider parallelizing this loop for speed gains
-    if filepath is None:
-        glob_path = '*.nc'
-    else:
-        glob_path = os.path.join(filepath, '*.nc')
-    for nc_filename in sorted(glob.iglob(glob_path)):
-        root_logger.info("Processing {}".format(nc_filename))
-        # TODO: would be better if we didn't have to write to a temp file
-        # and instead could just
-        outhandle, outfile = tempfile.mkstemp()
-        try:
-            ComplianceChecker.run_checker(ds_loc=nc_filename,
-                                          checker_names=['gliderdac'], verbose=True,
-                                          criteria='normal', output_format='json',
-                                          output_filename=outfile)
-
-            with open(outfile, 'rt') as f:
-                ers = json.loads(f.read())
-        finally:
-            # fix this?
-            os.close(outhandle)
-            if os.path.isfile(outfile):
-                os.remove(outfile)
-
-        # TODO: consider rewriting this when Glider DAC compliance checker
-        # priorities are refactored
-        # BWA: change over to high priority messages w/ cc-plugin-glider
-        #      2.0.0 release instead of string matching
-        all_errs = tuple(er_msg for er in ers['gliderdac']['high_priorities'] for
-                         er_msg in er['msgs'] if er['value'][0] < er['value'][1])
-
-        yield (nc_filename, all_errs)
-
