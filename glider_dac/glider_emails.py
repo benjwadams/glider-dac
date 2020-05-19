@@ -14,7 +14,6 @@ import json
 from itertools import chain, combinations
 import argparse
 from collections import OrderedDict
-from more_itertools import consecutive_groups
 import logging
 
 
@@ -175,14 +174,14 @@ def process_deployment(dep):
 
     # janky way of testing if passing
     dep_obj = db.Deployment.find_one({'_id': dep['_id']})
-    compliance_passed = "All tests passed!" in ers
+    compliance_passed = "All tests passed!" in errs
     dep_obj["compliance_check_passed"] = compliance_passed
 
     if compliance_passed:
         final_message = "All files passed compliance check on glider deployment {}".format(dep['name'])
     else:
         final_message = ("Deployment {} has issues:\n".format(dep['name']) +
-                         ers)
+                         errs)
         dep_obj["compliance_check_report"] = errs
     dep_obj.save()
     return compliance_passed, final_message
