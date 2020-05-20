@@ -28,5 +28,5 @@ cf-units>=2
 flask-cors==3.0.2
 # use git address for pip package as fetching from ERDDAP feature not yet
 # pushed up to PyPI due to rc status
--e git://github.com/ioos/compliance-checker@b086b576650a70d952bce29c40edd2d32e542711#egg=compliance-checker
-cc-plugin-glider>=2.0.2
+compliance-checker>=4.3.3
+cc-plugin-glider>=2.0.3
