@@ -199,17 +199,23 @@ class Deployment(Document):
                     md5_file = full_file + ".md5"
                     with open(md5_file, 'w') as mf:
                         mf.write(md5_value)
+            # schedule the checker job to kick off the compliance checker email
+            # on the deployment when the deployment is completed
+            # on_complete might be a misleading function name -- this section
+            # can run any time there is a sync, so check if a checker run has already been executed
+            if getattr(self, "compliance_check_passed", None) is not None:
+                # eliminate force/always re-run?
+                app.logger.info("Scheduling compliance check for completed "
+                                "deployment {}".format(self.deployment_dir))
+                queue.enqueue(glider_deployment_check,
+                              kwargs={"deployment_dir": self.deployment_dir},
+                              job_timeout=800)
         else:
             for dirpath, dirnames, filenames in os.walk(self.full_path):
                 for f in filenames:
                     if f.endswith(".md5"):
                         os.unlink(os.path.join(dirpath, f))
 
-        # schedule the checker job to kick off the compliance checker email
-        # on the deployment
-        queue.enqueue(glider_deployment_check,
-                      kwargs={"deployment_dir": self.deployment_dir,
-                              "force": True}, job_timeout=800)
 
 
     def calculate_checksum(self):
