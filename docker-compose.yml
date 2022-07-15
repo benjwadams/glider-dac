@@ -41,7 +41,7 @@ services:
     #        using env var or some other means
     healthcheck:
       # check if latest inotify event > 6h ago
-      test: if -f /tmp/last_glider_inotify_event; then (($(date +%s) - $(stat -c %Y /tmp/last_glider_inotify_event) < 21600)); fi
+      test: if -f /tmp/last_glider_inotify_event; then (($$(date +%s) - $$(stat -c %Y /tmp/last_glider_inotify_event) < 21600)); fi
       interval: 30m
       start_period: 15m
       timeout: 5s
