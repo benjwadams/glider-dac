@@ -1,4 +1,4 @@
-version: '2.1'
+version: '3.8'
 
 services:
   glider-dac-providers-app: &provider_anchor
@@ -31,6 +31,20 @@ services:
     environment:
       - DATA_ROOT=/data/data/priv_erddap
       - FLAGS_DIR=/scratch/tomcat-erddap-private/flag
+    volumes:
+      - /data/:/data
+      - /tmp
+    # HACK ALERT: inotify on watchdog sometimes stops listening.  We assume a
+    # fairly constant influx of files, so if the last file update time
+    # is more than six hours old, try restarting the container.
+    # TODO: Possibly suppress on dev where data isn't constantly flowing in
+    #        using env var or some other means
+    healthcheck:
+      # check if latest inotify event > 6h ago
+      test: if -f /tmp/last_glider_inotify_event; then (($(date +%s) - $(stat -c %Y /tmp/last_glider_inotify_event) < 21600)); fi
+      interval: 30m
+      start_period: 15m
+      timeout: 5s
 
   qartod_worker_1: &qartod
     build: .

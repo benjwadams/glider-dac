@@ -11,6 +11,7 @@ from watchdog.events import (FileSystemEventHandler,
                              DirCreatedEvent, DirDeletedEvent,
                              FileCreatedEvent, FileMovedEvent, FileModifiedEvent)
 from watchdog.observers import Observer
+from pathlib import Path
 
 
 class HandleDeploymentDB(FileSystemEventHandler):
@@ -71,8 +72,14 @@ class HandleDeploymentDB(FileSystemEventHandler):
         app.logger.info("Touching ERDDAP flag file at {}".format(full_path))
         # technically could async this as it's I/O, but touching a file is pretty
         # unlikely to be a bottleneck
-        with open(full_path, 'w') as f:
-            pass  # Causes file creation (touch)
+        try:
+            Path(full_path).touch()
+            # Sentinel file for healthchecks inside of the container.
+            # Watchdog script occasionally stops listening for events,
+            # so watch this file to see if anything has changed.
+            Path("/tmp/last_glider_inotify_event").touch()
+        except OSError:
+            app.logger.exception("Exception occurred when attempting to touch files")
 
     def on_moved(self, event):
         if isinstance(event, FileMovedEvent):
