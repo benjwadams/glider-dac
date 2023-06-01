@@ -65,9 +65,12 @@ class GliderQC(object):
             if varname not in self.ncfile.variables:
                 log.warning("%s defined as ancillary variable but doesn't exist", varname)
                 continue
+            anc_standard_name = getattr(self.ncfile.variables[varname],
+                                        'standard_name', '')
             if varname.endswith('_qc'):
                 valid_variables.append(varname)
-            if 'status_flag' in getattr(self.ncfile.variables[varname], 'standard_name', ''):
+            elif ("status_flag" in anc_standard_name or
+                  anc_standard_name.endswith("quality_flag")):
                 valid_variables.append(varname)
 
         return valid_variables
@@ -111,7 +114,7 @@ class GliderQC(object):
             'flat_line': {
                 'name': 'qartod_%(name)s_flat_line_flag',
                 'long_name': 'QARTOD Flat Line Test for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': 'flat_line_test_quality_flag',
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -121,7 +124,7 @@ class GliderQC(object):
             'gross_range': {
                 'name': 'qartod_%(name)s_gross_range_flag',
                 'long_name': 'QARTOD Gross Range Test for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': 'gross_range_test_quality_flag',
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -131,7 +134,7 @@ class GliderQC(object):
             'rate_of_change': {
                 'name': 'qartod_%(name)s_rate_of_change_flag',
                 'long_name': 'QARTOD Rate of Change Test for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': 'rate_of_change_test_quality_flag',
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -141,7 +144,7 @@ class GliderQC(object):
             'spike': {
                 'name': 'qartod_%(name)s_spike_flag',
                 'long_name': 'QARTOD Spike Test for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': "spike_test_quality_flag",
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -151,7 +154,7 @@ class GliderQC(object):
             'pressure': {
                 'name': 'qartod_monotonic_pressure_flag',
                 'long_name': 'QARTOD Pressure Test for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': 'quality_flag',
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -161,7 +164,7 @@ class GliderQC(object):
             'primary': {
                 'name': 'qartod_%(name)s_primary_flag',
                 'long_name': 'QARTOD Primary Flag for %(standard_name)s',
-                'standard_name': '%(standard_name)s status_flag',
+                'standard_name': 'aggregate_quality_flag',
                 'flag_values': np.array([1, 2, 3, 4, 9], dtype=np.int8),
                 'flag_meanings': 'GOOD NOT_EVALUATED SUSPECT BAD MISSING',
                 'references': 'http://gliders.ioos.us/static/pdf/Manual-for-QC-of-Glider-Data_05_09_16.pdf',
@@ -226,7 +229,7 @@ class GliderQC(object):
             raise
         return converted
 
-    def apply_qc(self, ncvariable):
+    def apply_qc(self, ncvariable, parent):
         '''
         Applies QC to a qartod variable
 
@@ -243,8 +246,7 @@ class GliderQC(object):
         qartod_test = getattr(ncvariable, 'qartod_test', None)
         if not qartod_test:
             return
-        standard_name = getattr(ncvariable, 'standard_name').split(' ')[0]
-        parent = self.ncfile.get_variables_by_attributes(standard_name=standard_name)[0]
+        standard_name = parent.standard_name
 
         times, values, mask = self.get_unmasked(parent)
         # There's no data to QC
@@ -425,11 +427,16 @@ def run_qc(config, ncfile):
             qcvar = ncfile.variables[qcvarname]
 
             log.info("Applying QC for %s", qcvar.name)
-            qc.apply_qc(qcvar)
+            qc.apply_qc(qcvar, ncvar)
 
         qc.apply_primary_qc(ncvar)
 
-    os.setxattr(ncfile.filepath(), "user.qc_run", b"true")
+    try:
+        ncfile.sync()
+        ncfile.close()
+        os.setxattr(ncfile.filepath(), "user.qc_run", b"true")
+    except OSError:
+        log.exception(f"Exception occurred trying to save QC to file on {ncfile.filepath()}:")
 
 
 def check_needs_qc(nc_path):
@@ -449,5 +456,8 @@ def check_needs_qc(nc_path):
             if qc.needs_qc(ncvar):
                 return True
     # if this section was reached, QC has been run, but xattr remains unset
-    os.setxattr(nc_path, "user.qc_run", b"true")
+    try:
+        os.setxattr(nc_path, "user.qc_run", b"true")
+    except OSError:
+        log.exception(f"Exception occurred trying to set xattr on already QCed file at {ncfile.filepath()}:")
     return False
