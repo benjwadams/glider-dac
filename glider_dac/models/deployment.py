@@ -5,7 +5,8 @@ glider_dac/models/deployment.py
 Model definition for a Deployment
 '''
 from flask import current_app
-from glider_dac import db, slugify
+from glider_dac import slugify
+from glider_dac.extensions import db
 from geoalchemy2.types import Geometry
 #from sqlalchemy import event
 from flask_sqlalchemy import models_committed

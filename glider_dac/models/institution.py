@@ -5,7 +5,7 @@ glider_dac/models/institution.py
 Model definition for Institution
 '''
 from datetime import datetime
-from glider_dac import db
+from glider_dac.extensions import db
 
 
 class Institution(db.Model):

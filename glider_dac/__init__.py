@@ -1,6 +1,8 @@
 import os
 import datetime
 
+from .extensions import db
+
 from flasgger import Swagger, LazyString, LazyJSONEncoder
 from flask import Flask, request
 from flask_cors import CORS, cross_origin
@@ -22,7 +24,6 @@ from glider_dac.views.institution import institution_bp
 from glider_dac.views.user import user_bp
 
 
-db = SQLAlchemy()
 csrf = CSRFProtect()
 # Login manager for frontend
 login_manager = LoginManager()
