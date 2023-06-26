@@ -42,7 +42,6 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from glider_dac import app, db
-from jinja2 import Template
 from lxml import etree
 from netCDF4 import Dataset
 from pathlib import Path
@@ -118,7 +117,7 @@ def build_datasets_xml(data_root, catalog_root, force):
                 last_run_ts = _redis.hget(redis_key, deployment_name) or 0
                 last_run = datetime.utcfromtimestamp(int(last_run_ts))
             except Exception:
-                logger.error("Error: Parsing last run for {}. ".format(deployment.name),
+                logger.error("Error: Parsing last run for {}. ".format(deployment_name),
                              "Processing dataset anyway.")
             else:
                 # there is a chance that the updated field won't be set if
@@ -179,11 +178,12 @@ def build_datasets_xml(data_root, catalog_root, force):
         os.rename(ds_tmp_path, ds_path)
     except OSError:
         logger.exception("Could not write to datasets.xml")
+    else:
+        for inactive_deployment_name in inactive_deployment_names:
+            sync_deployment(inactive_deployment_name)
 
     logger.info("Wrote {} from {} deployments".format(ds_path, deployments.count()))
     # issue flag refresh to remove inactive deployments after datasets.xml written
-    for inactive_deployment_name in inactive_deployment_names:
-        sync_deployment(inactive_deployment_name)
 
 
 def variable_sort_function(element):
@@ -557,7 +557,7 @@ def build_erddap_catalog_chunk(data_root, deployment):
         else:
             reload_settings = reload_template.format(10)
         try:
-            tree = etree.fromstring(f"""
+            tree = etree.fromstring(rf"""
                 <dataset type="EDDTableFromNcFiles" datasetID="{deployment.name}" active="true">
                     <!-- defaultDataQuery uses datasetID -->
                     <!--
@@ -602,7 +602,7 @@ def build_erddap_catalog_chunk(data_root, deployment):
                 add_extra_attributes(tree, identifier, mod_attrs)
         except Exception:
             logger.exception("Exception occurred while adding atts to template: {}".format(deployment_dir))
-        finally:
+        else:
             return etree.tostring(tree, encoding=str)
 
 def qc_var_snippets(required_vars, qc_var_types, dest_var_remaps):
