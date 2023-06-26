@@ -745,9 +745,12 @@ def check_for_qc_vars(nc):
     """
     qc_vars = {'gen_qc': {}, 'qartod': {}}
     for var in nc.variables:
+        var_standard_name = getattr(var, "standard_name", "")
         if var.endswith('_qc'):
             qc_vars['gen_qc'][var] = nc.variables[var].ncattrs()
-        elif var.startswith('qartod'):
+        elif (var.startswith('qartod') or
+              var_standard_name.endswith("_quality_flag") or
+              var_standard_name.endswith(" status_flag")):
             qc_vars['qartod'][var] = nc.variables[var].ncattrs()
     return qc_vars
 
