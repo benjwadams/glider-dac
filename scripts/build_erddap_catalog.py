@@ -512,16 +512,11 @@ def build_erddap_catalog_chunk(data_root, deployment):
     </test>
     """).findall("dataVariable")
 
-
-    # variables which need to have the variable {var_name}_qc present in the
-    # template.  Right now these are all the same, so are hardcoded
-    required_qc_vars = {"conductivity_qc", "density_qc", "depth_qc",
-                        "latitude_qc", "lat_uv_qc", "longitude_qc",
-                        "lon_uv_qc", "profile_lat_qc", "profile_lon_qc",
-                        "pressure_qc", "salinity_qc", "temperature_qc",
-                        "time_qc", "time_uv_qc", "profile_time_qc",
-                        "u_qc", "v_qc"}
-
+    required_qc_vars = {f"qartod_{var_name}_{qc_type}_flag" for var_name in
+                        {"conductivity", "density", "pressure",
+                        "salinity", "temperature"} for qc_type in
+                        {"spike", "flat_line", "rate_of_change",
+                         "gross_range", "primary"}}
     # any destinationNames that need to have a different name.
     # by default the destinationName will equal the sourceName
     dest_var_remaps = {'longitude_qc': 'precise_lon_qc',
